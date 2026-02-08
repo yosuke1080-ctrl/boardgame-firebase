@@ -1,54 +1,68 @@
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
+// 【追加】setGlobalOptions をインポート
 import { setGlobalOptions } from "firebase-functions/v2";
 import * as admin from "firebase-admin";
 
-// リージョンを東京に固定
-setGlobalOptions({ region: "asia-northeast1" });
 admin.initializeApp();
+const db = admin.firestore();
 
-export const matchmaker = onDocumentCreated("matchmaking_queue/{uid}", async (event) => {
-    const db = admin.firestore();
-    const queueRef = db.collection("matchmaking_queue");
+// 【追加】リージョンを東京に固定
+setGlobalOptions({ region: "asia-northeast1" });
 
-    // 1. 待機ユーザーを先着2名取得
-    const snapshot = await queueRef
+// マッチングを処理する関数 (Cloud Functions v2)
+export const matchmaker = onDocumentCreated("matchmaking_queue/{docId}", async (event) => {
+    const snapshot = event.data;
+    if (!snapshot) return;
+
+    // 1. 待機中のユーザーを古い順に2人取得
+    const queueSnapshot = await db.collection("matchmaking_queue")
         .orderBy("createdAt", "asc")
         .limit(2)
         .get();
 
-    // 二人揃うまで待機
-    if (snapshot.size < 2) {
-        console.log("二人目の参加を待機中...");
-        return; 
+    if (queueSnapshot.size < 2) {
+        console.log("対戦相手を待機中です...");
+        return;
     }
 
-    const user1 = snapshot.docs[0].data();
-    const user2 = snapshot.docs[1].data();
-    const uids = [user1.uid, user2.uid];
+    const [user1Doc, user2Doc] = queueSnapshot.docs;
+    const user1 = user1Doc.data();
+    const user2 = user2Doc.data();
 
-    console.log(`マッチング成立: ${uids[0]} vs ${uids[1]}`);
+    // 2. ユーザー情報の詳細（名前）を取得
+    const user1Profile = await db.collection("users").doc(user1.uid).get();
+    const user2Profile = await db.collection("users").doc(user2.uid).get();
 
-    // 2. 先攻・後攻をランダムに入れ替え
-    const shuffledUids = [...uids].sort(() => Math.random() - 0.5);
+    const name1 = user1Profile.data()?.name || "名無しさん";
+    const name2 = user2Profile.data()?.name || "名無しさん";
 
     // 3. 部屋を作成
+    const shuffledUids = [user1.uid, user2.uid].sort(() => Math.random() - 0.5);
     const roomRef = db.collection("rooms").doc();
+    const roomId = roomRef.id;
+
     await roomRef.set({
-        roomId: roomRef.id,
+        roomId: roomId,
         players: shuffledUids,
+        names: {
+            [user1.uid]: name1,
+            [user2.uid]: name2,
+        },
         turn: shuffledUids[0],
         board: Array(9).fill(0),
         status: "playing",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
-    // 4. 各ユーザーに部屋IDを通知し、キューから削除
+    // 4. 各ユーザーに部屋IDを通知
     const batch = db.batch();
-    uids.forEach(uid => {
-        batch.update(db.collection("users").doc(uid), { currentRoomId: roomRef.id });
-        batch.delete(queueRef.doc(uid));
-    });
+    batch.update(db.collection("users").doc(user1.uid), { currentRoomId: roomId });
+    batch.update(db.collection("users").doc(user2.uid), { currentRoomId: roomId });
+
+    // 5. キューから削除
+    batch.delete(user1Doc.ref);
+    batch.delete(user2Doc.ref);
 
     await batch.commit();
-    console.log(`部屋 ${roomRef.id} を作成しました。`);
+    console.log(`マッチング成立！ 東京リージョンで実行中: ${roomId} (${name1} vs ${name2})`);
 });

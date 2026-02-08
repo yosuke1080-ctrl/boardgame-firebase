@@ -47,8 +47,7 @@ class MatchingScreen extends StatefulWidget {
 class _MatchingScreenState extends State<MatchingScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-  final TextEditingController _nameController =
-      TextEditingController(); // 名前用コントローラー
+  final TextEditingController _nameController = TextEditingController();
   User? _user;
   bool _isWaiting = false;
   int wins = 0, losses = 0, draws = 0;
@@ -70,7 +69,6 @@ class _MatchingScreenState extends State<MatchingScreen> {
     if (!mounted) return;
     setState(() => _user = userCredential.user);
 
-    // ユーザー情報の初期化（存在しなければ作成、あれば読み込み）
     final userDoc = _db.collection('users').doc(_user!.uid);
     final docSnapshot = await userDoc.get();
 
@@ -83,7 +81,6 @@ class _MatchingScreenState extends State<MatchingScreen> {
       }, SetOptions(merge: true));
       _nameController.text = '名無しさん';
     } else {
-      // 既存の名前をテキストフィールドにセット
       _nameController.text = docSnapshot.data()?['name'] ?? '名無しさん';
     }
 
@@ -132,7 +129,6 @@ class _MatchingScreenState extends State<MatchingScreen> {
         ),
       ),
       body: SingleChildScrollView(
-        // キーボード表示時のレイアウト崩れ防止
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -167,8 +163,6 @@ class _MatchingScreenState extends State<MatchingScreen> {
                 ),
               ),
               const SizedBox(height: 30),
-
-              // 【追加】名前入力フィールド
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 50),
                 child: TextField(
@@ -188,7 +182,6 @@ class _MatchingScreenState extends State<MatchingScreen> {
                   },
                 ),
               ),
-
               const SizedBox(height: 50),
               _isWaiting
                   ? const Column(
@@ -326,6 +319,14 @@ class _GameScreenState extends State<GameScreen> {
           final String turnUid = data['turn'];
           final List<dynamic> players = data['players'];
 
+          // 【追加】相手の名前を取得するロジック
+          final names = data['names'] as Map<String, dynamic>?;
+          final opponentUid = players.firstWhere(
+            (id) => id != myUid,
+            orElse: () => "",
+          );
+          final opponentName = names?[opponentUid] ?? "対戦相手";
+
           final String? winner = _checkWinner(board, players);
           if (winner != null && !_isStatsUpdated) {
             _updateStats(winner);
@@ -336,6 +337,12 @@ class _GameScreenState extends State<GameScreen> {
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // 【追加】対戦相手の名前を表示
+              Text(
+                "🆚 $opponentName と対戦中",
+                style: const TextStyle(fontSize: 16, color: Colors.blueGrey),
+              ),
+              const SizedBox(height: 10),
               Text(
                 winner != null
                     ? (winner == "draw"
