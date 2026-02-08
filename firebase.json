@@ -1,1 +1,57 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"jp-loki-boardgame-dev","appId":"1:908937495731:android:de8c2d0ef44dc4893d1cc6","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"jp-loki-boardgame-dev","configurations":{"android":"1:908937495731:android:de8c2d0ef44dc4893d1cc6","ios":"1:908937495731:ios:de65a69c580792633d1cc6","macos":"1:908937495731:ios:de65a69c580792633d1cc6","web":"1:908937495731:web:fed7f1d47a935eaf3d1cc6","windows":"1:908937495731:web:4d65627f0e84e1ef3d1cc6"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "jp-loki-boardgame-dev",
+          "appId": "1:908937495731:android:de8c2d0ef44dc4893d1cc6",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "jp-loki-boardgame-dev",
+          "configurations": {
+            "android": "1:908937495731:android:de8c2d0ef44dc4893d1cc6",
+            "ios": "1:908937495731:ios:de65a69c580792633d1cc6",
+            "macos": "1:908937495731:ios:de65a69c580792633d1cc6",
+            "web": "1:908937495731:web:fed7f1d47a935eaf3d1cc6",
+            "windows": "1:908937495731:web:4d65627f0e84e1ef3d1cc6"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "build/web",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "disallowLegacyRuntimeConfig": true,
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ],
+      "predeploy": [
+        
+        "npm --prefix \"$RESOURCE_DIR\" run build"
+      ]
+    }
+  ]
+}
