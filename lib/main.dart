@@ -47,6 +47,8 @@ class MatchingScreen extends StatefulWidget {
 class _MatchingScreenState extends State<MatchingScreen> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final TextEditingController _nameController =
+      TextEditingController(); // 名前用コントローラー
   User? _user;
   bool _isWaiting = false;
   int wins = 0, losses = 0, draws = 0;
@@ -57,10 +59,33 @@ class _MatchingScreenState extends State<MatchingScreen> {
     _loginAndListen();
   }
 
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loginAndListen() async {
     final userCredential = await _auth.signInAnonymously();
     if (!mounted) return;
     setState(() => _user = userCredential.user);
+
+    // ユーザー情報の初期化（存在しなければ作成、あれば読み込み）
+    final userDoc = _db.collection('users').doc(_user!.uid);
+    final docSnapshot = await userDoc.get();
+
+    if (!docSnapshot.exists) {
+      await userDoc.set({
+        'name': '名無しさん',
+        'wins': 0,
+        'losses': 0,
+        'draws': 0,
+      }, SetOptions(merge: true));
+      _nameController.text = '名無しさん';
+    } else {
+      // 既存の名前をテキストフィールドにセット
+      _nameController.text = docSnapshot.data()?['name'] ?? '名無しさん';
+    }
 
     _db.collection('users').doc(_user!.uid).snapshots().listen((snapshot) {
       if (!snapshot.exists) return;
@@ -87,12 +112,10 @@ class _MatchingScreenState extends State<MatchingScreen> {
     if (_user == null) return;
     setState(() => _isWaiting = true);
 
-    // 以前の部屋情報をリセット
     await _db.collection('users').doc(_user!.uid).set({
       'currentRoomId': FieldValue.delete(),
     }, SetOptions(merge: true));
 
-    // キューに追加
     await _db.collection('matchmaking_queue').doc(_user!.uid).set({
       'uid': _user!.uid,
       'createdAt': FieldValue.serverTimestamp(),
@@ -108,67 +131,97 @@ class _MatchingScreenState extends State<MatchingScreen> {
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 25),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.blue.shade200),
+      body: SingleChildScrollView(
+        // キーボード表示時のレイアウト崩れ防止
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(height: 40),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 40,
+                  vertical: 25,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  children: [
+                    const Text(
+                      "あなたの戦績",
+                      style: TextStyle(fontSize: 16, color: Colors.blueGrey),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "$wins勝 / $losses敗 / $draws分",
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Column(
-                children: [
-                  const Text(
-                    "あなたの戦績",
-                    style: TextStyle(fontSize: 16, color: Colors.blueGrey),
+              const SizedBox(height: 30),
+
+              // 【追加】名前入力フィールド
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 50),
+                child: TextField(
+                  controller: _nameController,
+                  textAlign: TextAlign.center,
+                  decoration: const InputDecoration(
+                    labelText: "あなたの名前",
+                    hintText: "名前を入力してください",
+                    prefixIcon: Icon(Icons.edit),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    "$wins勝 / $losses敗 / $draws分",
-                    style: const TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.blueAccent,
-                    ),
-                  ),
-                ],
+                  onChanged: (val) async {
+                    if (val.trim().isNotEmpty) {
+                      await _db.collection('users').doc(_user!.uid).update({
+                        'name': val.trim(),
+                      });
+                    }
+                  },
+                ),
               ),
-            ),
-            const SizedBox(height: 60),
-            _isWaiting
-                ? const Column(
-                    children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 20),
-                      Text(
-                        "対戦相手を探しています...",
-                        style: TextStyle(color: Colors.grey),
+
+              const SizedBox(height: 50),
+              _isWaiting
+                  ? const Column(
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 20),
+                        Text(
+                          "対戦相手を探しています...",
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    )
+                  : ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 60,
+                          vertical: 20,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
                       ),
-                    ],
-                  )
-                : ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 60,
-                        vertical: 20,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30),
+                      onPressed: _startMatching,
+                      child: const Text(
+                        "対戦を開始する",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                    onPressed: _startMatching,
-                    child: const Text(
-                      "対戦を開始する",
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -187,10 +240,9 @@ class _GameScreenState extends State<GameScreen> {
   final String myUid = FirebaseAuth.instance.currentUser!.uid;
   bool _isStatsUpdated = false;
 
-  // 【修正ポイント】更地の状態でもエラーにならないよう set(merge: true) を使用
   Future<void> _updateStats(String winner) async {
     if (_isStatsUpdated) return;
-    setState(() => _isStatsUpdated = true);
+    _isStatsUpdated = true;
 
     final myDoc = FirebaseFirestore.instance.collection('users').doc(myUid);
     Map<String, dynamic> updateData = {};
@@ -203,7 +255,13 @@ class _GameScreenState extends State<GameScreen> {
       updateData = {'losses': FieldValue.increment(1)};
     }
 
-    await myDoc.set(updateData, SetOptions(merge: true));
+    try {
+      await myDoc.set(updateData, SetOptions(merge: true));
+      debugPrint("DEBUG: 戦績の保存に成功しました！ ($winner)");
+    } catch (e) {
+      debugPrint("DEBUG: 戦績の保存に失敗しました: $e");
+      _isStatsUpdated = false;
+    }
   }
 
   Future<void> _exit() async {
@@ -267,12 +325,13 @@ class _GameScreenState extends State<GameScreen> {
               .toList();
           final String turnUid = data['turn'];
           final List<dynamic> players = data['players'];
-          final String? winner = _checkWinner(board, players);
-          final bool isMyTurn = (turnUid == myUid);
 
+          final String? winner = _checkWinner(board, players);
           if (winner != null && !_isStatsUpdated) {
             _updateStats(winner);
           }
+
+          final bool isMyTurn = (turnUid == myUid);
 
           return Column(
             mainAxisAlignment: MainAxisAlignment.center,
