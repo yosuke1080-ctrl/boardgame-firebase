@@ -57,7 +57,7 @@ class _MatchingScreenState extends State<MatchingScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this); // 累計、今月、今日の3タブ
+    _tabController = TabController(length: 3, vsync: this);
     _loginAndListen();
   }
 
@@ -122,7 +122,7 @@ class _MatchingScreenState extends State<MatchingScreen>
     });
   }
 
-  // 期間別ランキングを表示するウィジェット
+  // 期間別ランキングを表示するウィジェット（自分を強調）
   Widget _buildRankingList(Query query) {
     return StreamBuilder<QuerySnapshot>(
       stream: query.snapshots(),
@@ -130,18 +130,16 @@ class _MatchingScreenState extends State<MatchingScreen>
         if (!snapshot.hasData)
           return const Center(child: CircularProgressIndicator());
 
-        // データの集計 (ユーザーごとの勝利数をカウント)
         Map<String, Map<String, dynamic>> agg = {};
         for (var doc in snapshot.data!.docs) {
           final d = doc.data() as Map<String, dynamic>;
           final uid = d['uid'];
           if (!agg.containsKey(uid)) {
-            agg[uid] = {'name': d['name'] ?? '名無しさん', 'count': 0};
+            agg[uid] = {'uid': uid, 'name': d['name'] ?? '名無しさん', 'count': 0};
           }
           agg[uid]!['count'] = (agg[uid]!['count'] as int) + 1;
         }
 
-        // カウント順にソート
         var sorted = agg.values.toList();
         sorted.sort((a, b) => (b['count'] as int).compareTo(a['count'] as int));
         final top5 = sorted.take(5).toList();
@@ -155,12 +153,24 @@ class _MatchingScreenState extends State<MatchingScreen>
           separatorBuilder: (_, __) => const Divider(height: 1),
           itemBuilder: (context, index) {
             final p = top5[index];
+            final bool isMe = (p['uid'] == _user?.uid); // 自分かどうか判定
+
             return ListTile(
+              tileColor: isMe
+                  ? Colors.yellow.withOpacity(0.15)
+                  : null, // 自分をハイライト
               leading: Text(
                 "${index + 1}位",
-                style: const TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(
+                  fontWeight: isMe ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
-              title: Text(p['name']),
+              title: Text(
+                isMe ? "${p['name']} (あなた)" : p['name'],
+                style: TextStyle(
+                  fontWeight: isMe ? FontWeight.bold : FontWeight.normal,
+                ),
+              ),
               trailing: Text(
                 "${p['count']} 勝",
                 style: const TextStyle(
@@ -192,7 +202,6 @@ class _MatchingScreenState extends State<MatchingScreen>
         child: Column(
           children: [
             const SizedBox(height: 20),
-            // 戦績エリア
             Container(
               width: MediaQuery.of(context).size.width * 0.85,
               padding: const EdgeInsets.all(20),
@@ -254,7 +263,6 @@ class _MatchingScreenState extends State<MatchingScreen>
                   ),
             const SizedBox(height: 30),
 
-            // ランキングセクション
             const Text(
               "🏆 ランキング",
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -272,7 +280,6 @@ class _MatchingScreenState extends State<MatchingScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  // 今日のランキング
                   _buildRankingList(
                     _db
                         .collection('win_logs')
@@ -281,7 +288,6 @@ class _MatchingScreenState extends State<MatchingScreen>
                           isGreaterThanOrEqualTo: startOfToday,
                         ),
                   ),
-                  // 今月のランキング
                   _buildRankingList(
                     _db
                         .collection('win_logs')
@@ -290,7 +296,7 @@ class _MatchingScreenState extends State<MatchingScreen>
                           isGreaterThanOrEqualTo: startOfMonth,
                         ),
                   ),
-                  // 累計ランキング (usersコレクションから直接取得)
+                  // 累計ランキングでも自分を強調
                   StreamBuilder<QuerySnapshot>(
                     stream: _db
                         .collection('users')
@@ -301,13 +307,22 @@ class _MatchingScreenState extends State<MatchingScreen>
                       if (!snapshot.hasData)
                         return const Center(child: CircularProgressIndicator());
                       final docs = snapshot.data!.docs;
-                      return ListView.builder(
+                      return ListView.separated(
                         itemCount: docs.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (context, i) {
                           final d = docs[i].data() as Map<String, dynamic>;
+                          final bool isMe = (docs[i].id == _user?.uid);
                           return ListTile(
+                            tileColor: isMe
+                                ? Colors.yellow.withOpacity(0.15)
+                                : null,
                             leading: Text("${i + 1}位"),
-                            title: Text(d['name'] ?? '名無し'),
+                            title: Text(
+                              isMe
+                                  ? "${d['name'] ?? '名無し'} (あなた)"
+                                  : (d['name'] ?? '名無し'),
+                            ),
                             trailing: Text("${d['wins']} 勝"),
                           );
                         },
@@ -327,7 +342,7 @@ class _MatchingScreenState extends State<MatchingScreen>
 // --- 2. ゲーム画面 ---
 class GameScreen extends StatefulWidget {
   final String roomId;
-  final String myName; // ログ保存用に自分の名前を受け取る
+  final String myName;
   const GameScreen({super.key, required this.roomId, required this.myName});
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -344,9 +359,7 @@ class _GameScreenState extends State<GameScreen> {
 
     try {
       if (winner == myUid) {
-        // 累計勝利数を加算
         await myDoc.update({'wins': FieldValue.increment(1)});
-        // 【追加】勝利ログを記録
         await FirebaseFirestore.instance.collection('win_logs').add({
           'uid': myUid,
           'name': widget.myName,
@@ -357,9 +370,7 @@ class _GameScreenState extends State<GameScreen> {
       } else {
         await myDoc.update({'losses': FieldValue.increment(1)});
       }
-      debugPrint("DEBUG: 戦績とログの保存に成功しました！");
     } catch (e) {
-      debugPrint("DEBUG: 保存失敗: $e");
       _isStatsUpdated = false;
     }
   }
